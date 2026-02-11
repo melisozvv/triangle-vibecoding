@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Triangle Drawer</title>
+    <style>
+        :root {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --bg-color: #1a1a1a;
+            --text-color: #ffffff;
+            --button-bg: rgba(255, 255, 255, 0.15);
+            --button-border: rgba(255, 255, 255, 0.25);
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-color: #ffffff;
+                --text-color: #000000;
+                --button-bg: rgba(0, 0, 0, 0.05);
+                --button-border: rgba(0, 0, 0, 0.1);
+            }
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            touch-action: none;
+            /* Critical for iOS drawing */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: flex;
+            gap: 15px;
+        }
+
+        .vertex-input-group {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: auto;
+            padding: 15px;
+            /* Increase touch area */
+        }
+
+        .angle-input {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 8px;
+            /* Bigger padding */
+            border-radius: 8px;
+            width: 60px;
+            /* Wider */
+            height: 40px;
+            /* Taller for fingers */
+            font-size: 18px;
+            /* Larger text */
+            font-weight: bold;
+            text-align: center;
+            outline: none;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            font-family: monospace;
+        }
+
+        .btn {
+            background: var(--button-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--button-border);
+            color: inherit;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.1s active, opacity 0.2s;
+        }
+
+        .btn:active {
+            transform: translateX(-50%) scale(0.95);
+        }
+
+        /* Specific fix because transform in #controls conflicts with active transform */
+        #controls .btn:active {
+            transform: scale(0.95);
+        }
+
+        #hint {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            opacity: 0.5;
+            pointer-events: none;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="controls">
+        <button class="btn" id="analyzeBtn">Analyze Triangle</button>
+        <button class="btn" id="clearBtn">Clear</button>
+    </div>
+
+    <!-- Container for floating inputs -->
+    <div id="overlay-container"></div>
+
+    <div id="canvas-container">
+        <canvas id="drawingCanvas"></canvas>
+    </div>
+
+    <div id="hint">Draw a triangle, then click Analyze. <br> Ask questions about it below!</div>
+
+    <!-- Chat Interface -->
+    <button id="chat-toggle-btn">💬 Ask AI</button>
+
+    <div id="chat-window">
+        <div id="chat-header">
+            <span>Triangle Assistant</span>
+            <button id="chat-close-btn">×</button>
+        </div>
+        <div id="chat-messages">
+            <div class="message bot">Hello! I'm here to help. Draw a triangle and ask me about its angles, sides, or
+                area!</div>
+        </div>
+        <div id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Type a question (e.g., 'What is the area?')">
+            <button id="chat-send-btn">Send</button>
+        </div>
+    </div>
+
+    <style>
+        /* ... existing styles ... */
+
+        #chat-toggle-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #007aff, #0056b3);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            z-index: 200;
+            transition: transform 0.2s;
+        }
+
+        #chat-toggle-btn:active {
+            transform: scale(0.95);
+        }
+
+        #chat-window {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            width: 300px;
+            /* Mobile friendly default */
+            height: 400px;
+            background: rgba(30, 30, 30, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+            /* Hidden by default */
+            flex-direction: column;
+            z-index: 200;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #chat-header {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+        }
+
+        #chat-close-btn {
+            background: none;
+            border: none;
+            color: #aaa;
+            font-size: 24px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        #chat-close-btn:hover {
+            color: white;
+        }
+
+        #chat-messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            padding: 10px 14px;
+            border-radius: 12px;
+            max-width: 85%;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ddd;
+            border-bottom-left-radius: 2px;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: #007aff;
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        #chat-input-area {
+            padding: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            gap: 10px;
+        }
+
+        #chat-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 8px 12px;
+            color: white;
+            outline: none;
+        }
+
+        #chat-input::placeholder {
+            color: #aaa;
+        }
+
+        #chat-send-btn {
+            background: none;
+            border: none;
+            color: #007aff;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        @media (max-width: 400px) {
+            #chat-window {
+                width: calc(100% - 40px);
+                height: 50vh;
+            }
+        }
+    </style>
+
+    <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const context = canvas.getContext('2d');
+        let isDrawing = false;
+        let isDragging = false;
+        let draggedVertexLabel = null;
+        let drawnPoints = []; // Store all points for analysis
+
+        // Configuration
+        const STROKE_WIDTH = 3;
+        const STROKE_COLOR_DARK = 'white';
+        const STROKE_COLOR_LIGHT = 'black';
+        const PREDICTION_COLOR = '#00ff00'; // Green for detected triangle
+
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+
+            context.scale(dpr, dpr);
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            context.lineWidth = STROKE_WIDTH;
+
+            updateColor();
+        }
+
+        function updateColor() {
+            const isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+            context.strokeStyle = isLight ? STROKE_COLOR_LIGHT : STROKE_COLOR_DARK;
+        }
+
+        // Initialize
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', updateColor);
+
+        // Drawing Helper Functions
+        function getCoordinates(e) {
+            if (e.touches && e.touches[0]) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function distance(p1, p2) {
+            return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+        }
+
+        // Global state for current detected/edited triangle
+        let currentTriangleState = null;
+
+        // Detects the 3 vertices of a triangle from a cloud of points
+        function analyzeTriangle() {
+            if (drawnPoints.length < 10) {
+                alert("Please draw a shape first!");
+                return;
+            }
+
+            // 1. Calculate Centroid
+            let sumX = 0, sumY = 0;
+            for (let p of drawnPoints) {
+                sumX += p.x;
+                sumY += p.y;
+            }
+            const centroid = { x: sumX / drawnPoints.length, y: sumY / drawnPoints.length };
+
+            // 2. Vertex A: Point furthest from Centroid
+            let A = drawnPoints[0];
+            let maxDist = 0;
+            for (let p of drawnPoints) {
+                const d = distance(centroid, p);
+                if (d > maxDist) {
+                    maxDist = d;
+                    A = p;
+                }
+            }
+
+            // 3. Vertex B: Point furthest from A
+            let B = drawnPoints[0];
+            maxDist = 0;
+            for (let p of drawnPoints) {
+                const d = distance(A, p);
+                if (d > maxDist) {
+                    maxDist = d;
+                    B = p;
+                }
+            }
+
+            // 4. Vertex C: Point with max height (perpendicular distance) from line AB
+            let C = drawnPoints[0];
+            let maxArea = 0;
+            for (let p of drawnPoints) {
+                const area = 0.5 * Math.abs(A.x * (B.y - p.y) + B.x * (p.y - A.y) + p.x * (A.y - B.y));
+                if (area > maxArea) {
+                    maxArea = area;
+                    C = p;
+                }
+            }
+
+            renderTriangle(A, B, C);
+        }
+
+        // --- Geometry Engine with Safe Input Handling and Dragging ---
+
+        function renderTriangle(A, B, C) {
+            // Save state
+            currentTriangleState = { A, B, C };
+
+            // Clear
+            context.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+            // Draw Triangle
+            context.beginPath();
+            context.strokeStyle = PREDICTION_COLOR;
+            context.lineWidth = 4;
+            context.moveTo(A.x, A.y);
+            context.lineTo(B.x, B.y);
+            context.lineTo(C.x, C.y);
+            context.closePath();
+            context.stroke();
+
+            // Draw Labels
+            drawLabel("A", A);
+            drawLabel("B", B);
+            drawLabel("C", C);
+
+            // Restore style
+            context.lineWidth = STROKE_WIDTH;
+            updateColor();
+
+            // Calculate Properties
+            const c = distance(A, B);
+            const a = distance(B, C);
+            const b = distance(C, A);
+
+            const radA = Math.acos((b * b + c * c - a * a) / (2 * b * c));
+            const radB = Math.acos((a * a + c * c - b * b) / (2 * a * c));
+            const radC = Math.acos((a * a + b * b - c * c) / (2 * a * b));
+
+            const degA = Math.round(radA * (180 / Math.PI));
+            const degB = Math.round(radB * (180 / Math.PI));
+            const degC = Math.round(radC * (180 / Math.PI));
+
+            // Render Inputs
+            renderOverlayInputs({ A, B, C }, { degA, degB, degC });
+        }
+
+        function drawLabel(text, point) {
+            context.fillStyle = PREDICTION_COLOR;
+            context.font = "bold 20px sans-serif";
+            context.fillText(text, point.x + 10, point.y + 10);
+
+            // Draw dot for vertex visual target
+            context.beginPath();
+            context.arc(point.x, point.y, 5, 0, Math.PI * 2);
+            context.fill();
+        }
+
+        function renderOverlayInputs(coords, angles) {
+            // Only re-create if container is empty OR if we are doing a full refresh.
+            // But dragging needs smooth updates.
+            // Strategy: Check if inputs exist. If so, update positions/values. Else create.
+            // HOWEVER: renderTriangle is called often during drag. Re-creating DOM elements kills input focus.
+            // Dragging doesn't need to update INPUT VALUES constantly (maybe?).
+            // Let's optimize: renderOverlayInputs will Update if exists, Create if not.
+
+            const container = document.getElementById('overlay-container');
+            const existsA = document.getElementById('inputAngleA');
+
+            if (existsA) {
+                updateVertexInputPosition('A', coords.A, angles.degA);
+                updateVertexInputPosition('B', coords.B, angles.degB);
+                updateVertexInputPosition('C', coords.C, angles.degC);
+            } else {
+                container.innerHTML = '';
+                createVertexInput(container, 'A', coords.A, angles.degA);
+                createVertexInput(container, 'B', coords.B, angles.degB);
+                createVertexInput(container, 'C', coords.C, angles.degC);
+            }
+        }
+
+        function updateVertexInputPosition(label, point, value) {
+            const input = document.getElementById('inputAngle' + label);
+            if (input) {
+                const group = input.parentElement;
+                group.style.left = point.x + 'px';
+                group.style.top = point.y + 'px';
+
+                // Only update value if NOT focused (to allow typing)
+                if (document.activeElement !== input) {
+                    input.value = value;
+                }
+            }
+        }
+
+        function createVertexInput(container, label, point, value) {
+            const group = document.createElement('div');
+            group.className = 'vertex-input-group';
+            group.style.left = point.x + 'px';
+            group.style.top = point.y + 'px';
+
+            // Stop propagation so clicking input doesn't trigger canvas draw/drag logic
+            group.addEventListener('mousedown', (e) => e.stopPropagation());
+            group.addEventListener('touchstart', (e) => e.stopPropagation());
+
+            const labelEl = document.createElement('div');
+            labelEl.className = 'vertex-label';
+            labelEl.innerText = label;
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.className = 'angle-input';
+            input.value = value;
+            input.id = 'inputAngle' + label;
+
+            input.addEventListener('input', (e) => updateFromInput(e, label));
+            input.addEventListener('focus', () => { isDrawing = false; });
+
+            group.appendChild(labelEl);
+            group.appendChild(input);
+            container.appendChild(group);
+        }
+
+        function updateFromInput(e, sourceLabel) {
+            // Copy of logic from previous step, assuming it's correct.
+            if (!currentTriangleState) return;
+
+            const inputA = document.getElementById('inputAngleA');
+            const inputB = document.getElementById('inputAngleB');
+            const inputC = document.getElementById('inputAngleC');
+
+            if (!inputA || !inputB || !inputC) return;
+
+            let degA = parseFloat(inputA.value);
+            let degB = parseFloat(inputB.value);
+            let degC = parseFloat(inputC.value);
+
+            if (isNaN(degA) || isNaN(degB) || isNaN(degC)) return;
+
+            // Logic: A+B+C = 180.
+            // If user edits A -> update C (keep B constant)
+            // If user edits B -> update C (keep A constant)
+            // If user edits C -> update B (keep A constant) - Arbitrary choice, but consistent
+
+            if (sourceLabel === 'A') {
+                degC = 180 - degA - degB;
+                if (degC <= 0) return; // Invalid
+                inputC.value = Math.round(degC);
+            } else if (sourceLabel === 'B') {
+                degC = 180 - degA - degB;
+                if (degC <= 0) return;
+                inputC.value = Math.round(degC);
+            } else if (sourceLabel === 'C') {
+                degB = 180 - degA - degC;
+                if (degB <= 0) return;
+                inputB.value = Math.round(degB);
+            }
+
+            // Valid geometry?
+            if (degA + degB + degC > 180.1 || degA + degB + degC < 179.9 || degA <= 0 || degB <= 0 || degC <= 0) return;
+
+            // Reconstruct Triangle
+            // We ALWAYS reconstruct from Base AB.
+            // So if A changed -> C moves.
+            // If B changed -> C moves.
+            // If C changed -> B changed -> C moves.
+            // Basically, C is the dynamic point.
+
+            const A = currentTriangleState.A;
+            const B = currentTriangleState.B;
+
+            // Vector AB
+            const dx = B.x - A.x;
+            const dy = B.y - A.y;
+            const c = Math.sqrt(dx * dx + dy * dy);
+            const baseAngle = Math.atan2(dy, dx);
+
+            const radA = degA * (Math.PI / 180);
+            const radB = degB * (Math.PI / 180);
+            const radC = degC * (Math.PI / 180);
+
+            // Sine Rule: b = c * sin(B) / sin(C)
+            const b = c * Math.sin(radB) / Math.sin(radC);
+
+            // Winding
+            const originalC = currentTriangleState.C;
+            const cross = (B.x - A.x) * (originalC.y - A.y) - (B.y - A.y) * (originalC.x - A.x);
+            const direction = cross >= 0 ? 1 : -1;
+
+            const newAngleAC = baseAngle + (direction * radA);
+
+            const newC = {
+                x: A.x + b * Math.cos(newAngleAC),
+                y: A.y + b * Math.sin(newAngleAC)
+            };
+
+            renderTriangle(A, B, newC);
+        }
+
+        function getNearestVertex(x, y) {
+            if (!currentTriangleState) return null;
+            const points = [
+                { p: currentTriangleState.A, l: 'A' },
+                { p: currentTriangleState.B, l: 'B' },
+                { p: currentTriangleState.C, l: 'C' }
+            ];
+            let minD = Infinity;
+            let nearest = null;
+
+            for (let item of points) {
+                const d = Math.sqrt(Math.pow(item.p.x - x, 2) + Math.pow(item.p.y - y, 2));
+                if (d < minD) {
+                    minD = d;
+                    nearest = item;
+                }
+            }
+            return { dist: minD, label: nearest.l };
+        }
+
+        // --- Event Handlers (Draw & Drag) ---
+
+        function startDrawing(e) {
+            const { x, y } = getCoordinates(e);
+
+            // Check Drag Mode
+            if (currentTriangleState) {
+                const nearest = getNearestVertex(x, y);
+                // 60px buffer for dragging - quite generous
+                if (nearest && nearest.dist < 60) {
+                    e.preventDefault();
+                    isDragging = true;
+                    draggedVertexLabel = nearest.label;
+                    return;
+                }
+            }
+
+            // Normal Drawing
+            e.preventDefault();
+            isDrawing = true;
+            document.getElementById('overlay-container').innerHTML = ''; // Clear inputs
+            currentTriangleState = null;
+
+            context.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            context.beginPath();
+            context.moveTo(x, y);
+            drawnPoints = [{ x, y }];
+        }
+
+        function draw(e) {
+            const coords = getCoordinates(e);
+            const x = coords.x;
+            const y = coords.y;
+
+            // Cursor Feedback
+            if (currentTriangleState && !isDrawing) {
+                const nearest = getNearestVertex(x, y);
+                canvas.style.cursor = (nearest && nearest.dist < 60) ? 'grab' : 'crosshair';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+
+            if (isDragging && currentTriangleState) {
+                e.preventDefault();
+                canvas.style.cursor = 'grabbing';
+
+                // Update the single vertex
+                // We create a NEW state object to trigger render
+                const newState = { ...currentTriangleState };
+                newState[draggedVertexLabel] = { x, y }; // Move it
+
+                renderTriangle(newState.A, newState.B, newState.C);
+                return;
+            }
+
+            if (isDrawing) {
+                e.preventDefault();
+                drawnPoints.push({ x, y });
+                context.lineTo(x, y);
+                context.stroke();
+            }
+        }
+
+        function stopDrawing(e) {
+            if (isDrawing) {
+                isDrawing = false;
+                context.closePath();
+                // Analyze immediately
+                analyzeTriangle();
+            }
+            if (isDragging) {
+                isDragging = false;
+                draggedVertexLabel = null;
+                canvas.style.cursor = 'grab';
+            }
+        }
+
+        // Mouse
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseleave', stopDrawing);
+
+        // Touch
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchcancel', stopDrawing);
+
+        // Controls
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            context.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            drawnPoints = [];
+            currentTriangleState = null;
+            document.getElementById('overlay-container').innerHTML = '';
+        });
+
+        document.getElementById('analyzeBtn').addEventListener('click', analyzeTriangle);
+
+        // --- Chat Assistant Logic ---
+
+        const chatWindow = document.getElementById('chat-window');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+
+        document.getElementById('chat-toggle-btn').addEventListener('click', () => {
+            chatWindow.style.display = chatWindow.style.display === 'flex' ? 'none' : 'flex';
+            if (chatWindow.style.display === 'flex') chatInput.focus();
+        });
+
+        document.getElementById('chat-close-btn').addEventListener('click', () => {
+            chatWindow.style.display = 'none';
+        });
+
+        document.getElementById('chat-send-btn').addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Prevent typing in chat from triggering canvas shortcuts or drawing
+        chatInput.addEventListener('focus', () => { isDrawing = false; });
+        chatWindow.addEventListener('mousedown', (e) => e.stopPropagation());
+        chatWindow.addEventListener('touchstart', (e) => e.stopPropagation());
+
+        function sendMessage() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+
+            // Add User Message
+            addMessage(text, 'user');
+            chatInput.value = '';
+
+            // Process Logic
+            const response = generateResponse(text);
+
+            // Simulate slight delay for "thinking" feel
+            setTimeout(() => {
+                addMessage(response, 'bot');
+            }, 300);
+        }
+
+        function addMessage(text, sender) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            div.innerText = text;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function generateResponse(query) {
+            if (!currentTriangleState) {
+                return "I don't see a triangle yet. Please draw one first!";
+            }
+
+            const q = query.toLowerCase();
+            const { A, B, C } = currentTriangleState;
+
+            // Calculate current properties (re-calc to ensure fresh data)
+            const sideC = distance(A, B); // Length AB
+            const sideA = distance(B, C); // Length BC
+            const sideB = distance(C, A); // Length AC
+
+            const radA = Math.acos((sideB * sideB + sideC * sideC - sideA * sideA) / (2 * sideB * sideC));
+            const radB = Math.acos((sideA * sideA + sideC * sideC - sideB * sideB) / (2 * sideA * sideC));
+            const radC = Math.acos((sideA * sideA + sideB * sideB - sideC * sideC) / (2 * sideA * sideB));
+
+            const degA = Math.round(radA * (180 / Math.PI));
+            const degB = Math.round(radB * (180 / Math.PI));
+            const degC = Math.round(radC * (180 / Math.PI));
+
+            // 1. Exterior Angles
+            if (q.includes('outside') || q.includes('exterior') || q.includes('external')) {
+                const extA = 180 - degA;
+                const extB = 180 - degB;
+                const extC = 180 - degC;
+                return `The exterior (outside) angles are: A'=${extA}°, B'=${extB}°, C'=${extC}°. (They sum to 360°!)`;
+            }
+
+            // 2. Interior Angles
+            if (q.includes('angle')) {
+                if (q.includes('a ')) return `Interior Angle A is ${degA} degrees.`;
+                if (q.includes('b ')) return `Interior Angle B is ${degB} degrees.`;
+                if (q.includes('c ')) return `Interior Angle C is ${degC} degrees.`;
+                if (q.includes('largest') || q.includes('biggest') || q.includes('max')) {
+                    const max = Math.max(degA, degB, degC);
+                    const label = max === degA ? 'A' : (max === degB ? 'B' : 'C');
+                    return `The largest angle is ${label} (${max}°).`;
+                }
+                if (q.includes('smallest') || q.includes('min')) {
+                    const min = Math.min(degA, degB, degC);
+                    const label = min === degA ? 'A' : (min === degB ? 'B' : 'C');
+                    return `The smallest angle is ${label} (${min}°).`;
+                }
+                return `The interior angles are: A=${degA}°, B=${degB}°, C=${degC}°.`;
+            }
+
+            // 3. Sides / Lengths
+            if (q.includes('side') || q.includes('length') || q.includes('long') || q.includes('perimeter')) {
+                const sA = Math.round(sideA);
+                const sB = Math.round(sideB);
+                const sC = Math.round(sideC);
+
+                if (q.includes('perimeter')) {
+                    return `The perimeter is approx ${sA + sB + sC} pixels.`;
+                }
+
+                if (q.includes('longest') || q.includes('max')) {
+                    const max = Math.max(sideA, sideB, sideC);
+                    const label = max === sideA ? 'BC (a)' : (max === sideB ? 'AC (b)' : 'AB (c)');
+                    return `The longest side is ${label} with a length of ~${Math.round(max)} units.`;
+                }
+                return `Side lengths (in pixels): AB=${sC}, BC=${sA}, AC=${sB}.`;
+            }
+
+            // 4. Area
+            if (q.includes('area') || q.includes('size')) {
+                const s = (sideA + sideB + sideC) / 2;
+                const area = Math.sqrt(s * (s - sideA) * (s - sideB) * (s - sideC));
+                return `The area is approximately ${Math.round(area).toLocaleString()} square pixels.`;
+            }
+
+            // 5. Classification
+            // Check specific types first
+            const tol = 15; // Tolerance
+            const isEquilateral = Math.abs(sideA - sideB) < tol && Math.abs(sideB - sideC) < tol;
+            const isIsosceles = Math.abs(sideA - sideB) < tol || Math.abs(sideB - sideC) < tol || Math.abs(sideA - sideC) < tol;
+            const isRight = Math.abs(degA - 90) < 5 || Math.abs(degB - 90) < 5 || Math.abs(degC - 90) < 5;
+
+            if (q.includes('equilateral')) return isEquilateral ? "Yes! All sides are equal." : "No, it's not equilateral.";
+            if (q.includes('isosceles')) return isIsosceles ? "Yes, at least two sides are equal." : "No, all sides are different (scalene).";
+            if (q.includes('right')) return isRight ? "Yes, it has a 90° angle." : "No, I don't see exact 90° angles.";
+
+            // General "What is this?" question
+            if (q.includes('type') || q.includes('kind') || q.includes('sort') || q.includes('classify') || q.includes('name') || q.includes('what is this')) {
+                let shapeType = "Scalene";
+                if (isEquilateral) shapeType = "Equilateral";
+                else if (isIsosceles) shapeType = "Isosceles";
+
+                let angleType = "Acute";
+                if (degA > 90 || degB > 90 || degC > 90) angleType = "Obtuse";
+                else if (isRight) angleType = "Right";
+
+                // Special case for Equiangular
+                if (isEquilateral) return "This is an Equilateral triangle (all angles are 60°).";
+
+                return `This is an **${angleType} ${shapeType}** triangle.`;
+            }
+
+            return "I can answer questions about:\n- Angles (Interior/Exterior)\n- Side lengths & Perimeter\n- Area\n- Triangle Type (e.g. Isosceles, Right)";
+        }
+
+    </script>
+</body>
+
+```
